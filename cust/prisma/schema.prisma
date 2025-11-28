@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Unified User model - supports both website users and dashboard admins
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique @db.VarChar(255)
+  password_hash String   @map("password_hash") @db.VarChar(255)
+  name          String?  @db.VarChar(255)
+  phone         String?  @db.VarChar(20)
+  address       String?  @db.Text
+  city          String?  @db.VarChar(100)
+  country       String?  @db.VarChar(100)
+  role          String   @default("user") @db.VarChar(50) // "admin" for dashboard, "user" for website
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Website user relationships
+  complaints     Complaint[]
+  feedbacks      Feedback[]
+  serviceHistory ServiceHistory[]
+  
+  // Admin relationships
+  notifications  Notification[]
+
+  @@index([role])
+  @@index([email])
+  @@map("users")
+}
+
+model Complaint {
+  id            String    @id @default(uuid())
+  user_id       String    @map("user_id") // Website user who raised the complaint
+  technician_id String?   @map("technician_id")
+  title         String    @db.VarChar(255)
+  description   String    @db.Text
+  category      String    @default("General") @db.VarChar(100)
+  status        String    @default("Open") @db.VarChar(50)
+  priority      String    @default("medium") @db.VarChar(50)
+  created_at    DateTime  @default(now()) @map("created_at")
+  updated_at    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user           User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  technician     Technician?       @relation(fields: [technician_id], references: [id], onDelete: SetNull)
+  serviceHistory ServiceHistory[]
+  notifications  Notification[]
+  feedbacks      Feedback[]        // Feedback related to this complaint
+
+  @@index([user_id])
+  @@index([status])
+  @@index([technician_id])
+  @@map("complaints")
+}
+
+// Unified Feedback model - supports both standalone feedback and complaint-specific feedback
+model Feedback {
+  id            String   @id @default(uuid())
+  user_id       String   @map("user_id") // User who provided the feedback
+  complaint_id  String?  @map("complaint_id") // Optional: if feedback is for a specific complaint
+  title         String?  @db.VarChar(255) // Optional: for standalone feedback
+  message       String   @db.Text
+  feedback_text String?  @map("feedback_text") @db.Text // Alternative field name for complaint feedback
+  rating        Int?     @db.SmallInt
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  complaint Complaint? @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([complaint_id])
+  @@map("feedbacks")
+}
+
+model Technician {
+  id             String    @id @default(uuid())
+  name           String    @db.VarChar(255)
+  email          String    @unique @db.VarChar(255)
+  phone          String?   @db.VarChar(20)
+  specialization String?   @db.VarChar(255)
+  availability   String    @default("available") @db.VarChar(50)
+  created_at     DateTime  @default(now()) @map("created_at")
+  updated_at     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  complaints     Complaint[]
+  serviceHistory ServiceHistory[]
+
+  @@index([availability])
+  @@map("technicians")
+}
+
+model ServiceHistory {
+  id              String    @id @default(uuid())
+  user_id         String    @map("user_id") // Changed from customer_id to user_id
+  technician_id   String?   @map("technician_id")
+  complaint_id    String?   @map("complaint_id")
+  service_date    DateTime? @map("service_date")
+  description     String?   @db.Text
+  duration_minutes Int?     @map("duration_minutes")
+  status          String    @default("completed") @db.VarChar(50)
+  notes           String?   @db.Text
+  created_at      DateTime  @default(now()) @map("created_at")
+  updated_at      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user      User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  technician Technician? @relation(fields: [technician_id], references: [id], onDelete: SetNull)
+  complaint Complaint?  @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([technician_id])
+  @@map("service_history")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  user_id     String?  @map("user_id") // Changed from admin_id to user_id (admin users)
+  complaint_id String? @map("complaint_id")
+  type        String   @default("complaint_raised") @db.VarChar(50)
+  message     String?  @db.Text
+  is_read     Boolean  @default(false) @map("is_read")
+  created_at  DateTime @default(now()) @map("created_at")
+
+  user      User?      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  complaint Complaint? @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([is_read])
+  @@map("notifications")
+}
